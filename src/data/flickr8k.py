@@ -65,6 +65,7 @@ class Flickr8kPaths:
 class Flickr8kDataset(Dataset):
     def __init__(self, root: str | Path, split: str, transform=None):
         self.data_root = str(root)
+        self.images_dir = os.path.join(self.data_root, "images")
 
         self.paths = Flickr8kPaths(Path(root))
         self.captions = parse_captions(self.paths.token_file )
@@ -86,7 +87,7 @@ class Flickr8kDataset(Dataset):
 
     def __getitem__(self, idx):
         img_name = self.image_names[idx]
-        img_path = os.path.join(self.images_dir, "images", img_name)  # nel tuo caso è images
+        img_path = os.path.join(self.images_dir, img_name)  
 
         if not os.path.isfile(img_path):
             return None  # <-- QUESTO
