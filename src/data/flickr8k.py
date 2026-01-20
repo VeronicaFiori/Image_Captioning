@@ -41,7 +41,7 @@ class Flickr8kPaths:
 
     @property
     def images_dir(self) -> Path:
-        return self.root / "Images"
+        return self.root / "images"
 
     @property
     def token_file(self) -> Path:
