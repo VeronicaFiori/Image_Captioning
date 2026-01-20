@@ -1,98 +1,104 @@
+# src/infer/generate.py
 from __future__ import annotations
 
+# IMPORTANTISSIMO: env PRIMA di importare transformers/open_clip
+import os
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_cuda_data_dir=/usr/local/cuda")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import argparse
-import json
 from pathlib import Path
-from typing import Optional
 
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 
-from src.utils.io import load_yaml
 from src.models.build import build_model
-from src.data.flickr8k import Flickr8kDataset
-from src.data.transforms import build_transform
-from src.data.collate import collate_flickr8k
+from src.utils.io import load_yaml
 
 
 def parse_args():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--config", default="configs/flickr8k_caption.yaml")
     ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--image", default=None)
-    ap.add_argument("--config", default=None)
-    ap.add_argument("--data_root", default=None)
-    ap.add_argument("--split", default=None, choices=["train", "val", "test"])
-    ap.add_argument("--save_json", default=None)
-    ap.add_argument("--prompt", default="Describe the image in one sentence.")
+    ap.add_argument("--image", required=True)
+    ap.add_argument("--prompt", default="Describe the image. Use only visible details.")
     ap.add_argument("--num_beams", type=int, default=5)
     ap.add_argument("--max_new_tokens", type=int, default=40)
-    ap.add_argument("--batch_size", type=int, default=32)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--no_cuda", action="store_true")
     return ap.parse_args()
-
-
-def load_model(ckpt_path: str, cfg: Optional[dict], device: str):
-    if cfg is None:
-        cfg = load_yaml(Path(__file__).resolve().parents[2] / "configs" / "flickr8k_caption.yaml")
-    model = build_model(cfg)
-    state = torch.load(ckpt_path, map_location="cpu")
-    model.load_state_dict(state["model"], strict=True)
-    model.to(device)
-    model.eval()
-    return model
-
-
-@torch.no_grad()
-def caption_single(model, image_path: str, prompt: str, num_beams: int, max_new_tokens: int, device: str):
-    tfm = build_transform(train=False)
-    img = Image.open(image_path).convert("RGB")
-    x = tfm(img).unsqueeze(0).to(device)
-    return model.generate_caption(x, prompt_text=prompt, num_beams=num_beams, max_new_tokens=max_new_tokens)[0]
-
-
-@torch.no_grad()
-def caption_split(model, data_root: str, split: str, prompt: str, num_beams: int, max_new_tokens: int, device: str, save_json: str, batch_size: int):
-    ds = Flickr8kDataset(data_root, split=split, transform=build_transform(train=False))
-    loader = DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=device.startswith("cuda"),
-        collate_fn=lambda b: collate_flickr8k(b, split=split),
-    )
-    out = {}
-    for batch in tqdm(loader, desc=f"infer-{split}"):
-        images = batch["images"].to(device)
-        names = batch["image_names"]
-        preds = model.generate_caption(images, prompt_text=prompt, num_beams=num_beams, max_new_tokens=max_new_tokens)
-        for n, p in zip(names, preds):
-            out[n] = p
-    Path(save_json).parent.mkdir(parents=True, exist_ok=True)
-    with open(save_json, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-    return out
 
 
 def main():
     args = parse_args()
-    device = args.device
+
+    # device
+    device = "cpu" if args.no_cuda else args.device
     if device.startswith("cuda") and not torch.cuda.is_available():
         device = "cpu"
 
-    cfg = load_yaml(args.config) if args.config else None
-    model = load_model(args.ckpt, cfg, device)
+    # prints "a prova di colab": flush=True
+    print(">> starting generate.py", flush=True)
+    print(f">> device = {device}", flush=True)
+    print(f">> ckpt = {args.ckpt}", flush=True)
+    print(f">> image = {args.image}", flush=True)
 
-    if args.image:
-        print(caption_single(model, args.image, args.prompt, args.num_beams, args.max_new_tokens, device))
-        return
+    # load cfg
+    cfg = load_yaml(args.config)
+    print(">> config loaded", flush=True)
 
-    if not (args.data_root and args.split and args.save_json):
-        raise SystemExit("Provide --image OR (--data_root --split --save_json)")
+    # build model
+    print(">> building model...", flush=True)
+    model = build_model(cfg)
+    model.eval()
+    model.to(device)
+    print(">> model built", flush=True)
 
-    caption_split(model, args.data_root, args.split, args.prompt, args.num_beams, args.max_new_tokens, device, args.save_json, args.batch_size)
+    # load ckpt (strict!)
+    print(">> loading checkpoint...", flush=True)
+    ckpt = torch.load(args.ckpt, map_location="cpu")
+    missing, unexpected = model.load_state_dict(ckpt["model"], strict=False)
+    print(f">> ckpt loaded. missing={len(missing)} unexpected={len(unexpected)}", flush=True)
+    if len(missing) > 0:
+        print(">> missing keys (first 20):", missing[:20], flush=True)
+    if len(unexpected) > 0:
+        print(">> unexpected keys (first 20):", unexpected[:20], flush=True)
+
+    # load image
+    img_path = Path(args.image)
+    if not img_path.exists():
+        raise FileNotFoundError(f"Image not found: {img_path}")
+
+    print(">> loading image...", flush=True)
+    image = Image.open(str(img_path)).convert("RGB")
+
+    # IMPORTANT: usa lo stesso preprocess del vision encoder
+    # build_model(cfg) nel mio progetto espone model.preprocess se presente
+    if hasattr(model, "preprocess") and model.preprocess is not None:
+        x = model.preprocess(image).unsqueeze(0)
+    else:
+        # fallback: resize semplice (meglio di niente, ma consiglio avere preprocess vero)
+        image = image.resize((224, 224))
+        x = torch.from_numpy(__import__("numpy").array(image)).permute(2, 0, 1).float() / 255.0
+        x = x.unsqueeze(0)
+
+    x = x.to(device)
+
+    # generate
+    print(">> running generation...", flush=True)
+    with torch.no_grad():
+        out_text = model.generate(
+            images=x,
+            prompt_text=args.prompt,
+            num_beams=args.num_beams,
+            max_new_tokens=args.max_new_tokens,
+        )
+
+    print("\n=== CAPTION ===", flush=True)
+    print(out_text, flush=True)
 
 
 if __name__ == "__main__":

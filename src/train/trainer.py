@@ -96,8 +96,14 @@ def main():
         device = "cpu"
 
     # Data
-    train_ds = Flickr8kDataset(args.data_root, split="train", transform=build_transform(train=True))
-    val_ds = Flickr8kDataset(args.data_root, split="val", transform=build_transform(train=False))
+    model = build_model(cfg).to(device)
+    preprocess = getattr(model, "preprocess", None)
+
+    train_ds = Flickr8kDataset(args.data_root, split="train", transform=preprocess)
+    val_ds   = Flickr8kDataset(args.data_root, split="val", transform=preprocess)
+   
+    #train_ds = Flickr8kDataset(args.data_root, split="train", transform=build_transform(train=True))
+    #val_ds = Flickr8kDataset(args.data_root, split="val", transform=build_transform(train=False))
 
     train_loader = DataLoader(
         train_ds,
@@ -117,7 +123,7 @@ def main():
     )
 
     # Model
-    model = build_model(cfg).to(device)
+    #model = build_model(cfg).to(device)
 
     # Optimizer: ONLY params that require grad (Q-Former + proj)
     params = [p for p in model.parameters() if p.requires_grad]
