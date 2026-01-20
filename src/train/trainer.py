@@ -34,6 +34,8 @@ def train_one_epoch(model, loader, optimizer, scaler, cfg, device):
     running_loss = 0.0
     pbar = tqdm(loader, desc="train", leave=False)
     for step, batch in enumerate(pbar, start=1):
+        if batch is None:
+            continue
         images = batch["images"].to(device, non_blocking=True)
         captions = batch["captions"]
         optimizer.zero_grad(set_to_none=True)
@@ -63,6 +65,8 @@ def eval_one_epoch(model, loader, cfg, device):
     running_loss = 0.0
     pbar = tqdm(loader, desc="val", leave=False)
     for step, batch in enumerate(pbar, start=1):
+        if batch is None:
+           continue
         images = batch["images"].to(device, non_blocking=True)
         # For val we have list-of-lists; pick first ref for loss
         captions = [refs[0] if isinstance(refs, list) and len(refs) > 0 else "" for refs in batch["captions"]]
@@ -129,6 +133,7 @@ def main():
     best_val = 1e9
     history = []
 
+    
     for epoch in range(1, int(cfg["train"]["epochs"]) + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, scaler, cfg, device)
         val_loss = eval_one_epoch(model, val_loader, cfg, device)

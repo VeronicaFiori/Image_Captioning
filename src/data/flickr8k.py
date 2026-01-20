@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from email.mime import image
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -80,6 +82,25 @@ class Flickr8kDataset(Dataset):
     def __len__(self) -> int:
         return len(self.image_names)
 
+    def __getitem__(self, idx):
+        img_name = self.image_names[idx]
+        img_path = os.path.join(self.data_root, "images", img_name)  # nel tuo caso è images
+
+        if not os.path.isfile(img_path):
+            return None  # <-- QUESTO
+
+        try:
+            image = Image.open(img_path).convert("RGB")
+        except Exception:
+            return None
+ 
+        if self.transform is not None:
+            image = self.transform(image)
+ 
+        caption = self._sample_caption(img_name)  # o come si chiama nel tuo file
+        return {"image": image, "caption": caption, "image_id": img_name}
+
+"""
     def __getitem__(self, idx: int):
         name = self.image_names[idx]
         img_path = self.paths.images_dir / name
@@ -97,3 +118,6 @@ class Flickr8kDataset(Dataset):
             "image_name": name,
             "captions": caps,
         }
+"""
+   
+
