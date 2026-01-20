@@ -130,11 +130,15 @@ class Flickr8kDataset(Dataset):
  
         if self.transform is not None:
             image = self.transform(image)
- 
+
+        if isinstance(image, Image.Image):
+            image = self.to_tensor(image)
+            
         if self.split == "train":
             caption = self._sample_caption(img_name)     # stringa
         else:
             caption = self._get_all_captions(img_name)   # lista di stringhe
+
 
         return {"image": image, "caption": caption, "image_id": img_name}
 
