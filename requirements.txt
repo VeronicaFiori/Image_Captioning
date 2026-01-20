@@ -1,0 +1,16 @@
+torch>=2.1
+torchvision>=0.16
+transformers>=4.45
+accelerate>=0.33
+open-clip-torch>=2.24.0
+pillow
+pyyaml
+tqdm
+sentencepiece
+protobuf
+nltk
+sacrebleu
+gradio>=4.0
+# Optional: Qwen2-VL judge
+qwen-vl-utils
+bitsandbytes
