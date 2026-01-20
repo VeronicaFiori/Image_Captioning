@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from email.mime import image
 import os
 from pathlib import Path
+from random import random
 from typing import Dict, List, Tuple
 
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
+import random
+
 
 
 def parse_captions(token_file: Path) -> Dict[str, List[str]]:
@@ -84,6 +87,34 @@ class Flickr8kDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.image_names)
+    
+
+
+    def _get_all_captions(self, img_name: str):
+        caps = self.captions.get(img_name, [])
+        caps = [c.strip() for c in caps if isinstance(c, str) and c.strip()]
+        return caps
+
+    def _sample_caption(self, img_name: str):
+        caps = self._get_all_captions(img_name)
+        if len(caps) == 0:
+            return ""
+        return random.choice(caps)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def __getitem__(self, idx):
         img_name = self.image_names[idx]
@@ -100,8 +131,13 @@ class Flickr8kDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
  
-        caption = self._sample_caption(img_name)  # o come si chiama nel tuo file
+        if self.split == "train":
+            caption = self._sample_caption(img_name)     # stringa
+        else:
+            caption = self._get_all_captions(img_name)   # lista di stringhe
+
         return {"image": image, "caption": caption, "image_id": img_name}
+
 
 """
     def __getitem__(self, idx: int):
